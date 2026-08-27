@@ -12,7 +12,7 @@ Tasks 1–15 make a complete submission. 16 and 17 are optional.
       `*.jar` rule would otherwise break `./gradlew` for anyone cloning), `docs/`
       skeleton.
       → `1. initial repository structure + decisions + task-breakdown files`
-- [ ] **2. Producer skeleton.** Spring Boot project, Gradle Kotlin DSL, Java 25.
+- [X] **2. Producer skeleton.** Spring Boot project, Gradle Kotlin DSL, Java 25.
       Boots and logs one line.
       → `2. producer spring boot project skeleton`
 - [ ] **3. Consumer skeleton.** Same shape.

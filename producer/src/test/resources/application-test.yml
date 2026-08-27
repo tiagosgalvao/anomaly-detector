@@ -1,0 +1,9 @@
+spring:
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:9092}
+
+logging:
+  level:
+    com.anomaly: DEBUG
+    org.apache.kafka: WARN
+    org.springframework.kafka: WARN
