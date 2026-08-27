@@ -15,7 +15,7 @@ Tasks 1–15 make a complete submission. 16 and 17 are optional.
 - [X] **2. Producer skeleton.** Spring Boot project, Gradle Kotlin DSL, Java 25.
       Boots and logs one line.
       → `2. producer spring boot project skeleton`
-- [ ] **3. Consumer skeleton.** Same shape.
+- [X] **3. Consumer skeleton.** Same shape.
       → `3. consumer spring boot project skeleton`
 - [ ] **4. Kafka service.** `docker-compose.yml` with Kafka only — KRaft mode,
       capped heap, healthcheck. Prove it reaches healthy and create the topic by
