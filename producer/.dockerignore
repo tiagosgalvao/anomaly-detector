@@ -1,0 +1,15 @@
+build/
+.gradle/
+.idea/
+*.iml
+
+# The container build invokes Gradle from the builder image directly, so the
+# wrapper is local-development tooling and has no business in the build context.
+gradle/
+gradlew
+gradlew.bat
+
+.gitignore
+.gitattributes
+Dockerfile
+.dockerignore

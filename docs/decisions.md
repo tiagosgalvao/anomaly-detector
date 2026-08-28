@@ -34,7 +34,7 @@ produced it, which is a routine operational question for anything that fires
 alarms.
 
 **Cost, stated plainly:** Kafka is the heaviest of the four options. It needs a
-capped heap and 10–20 seconds to become ready, which forces a healthcheck and
+capped heap and several seconds to become ready, which forces a healthcheck and
 `depends_on: condition: service_healthy` for a clean first run. At the scope
 actually submitted — one series, one partition, one consumer — RabbitMQ would
 serve the functionality equally well. The Kafka-specific value here is replay
@@ -219,3 +219,73 @@ downloader it does not need. The wrapper stays in the tree for local development
 and is committed deliberately — the standard Java `.gitignore` template excludes
 `*.jar`, which would silently omit `gradle-wrapper.jar` and leave `./gradlew`
 broken for anyone cloning the repository.
+
+### 18. Two broker listeners, one internal and one for the host
+
+The broker advertises `kafka:9092` on an internal listener and `localhost:29092`
+on a published one. A Kafka client does not talk to the address it bootstrapped
+against; it fetches cluster metadata and then connects to whatever the broker
+*advertises*. A single listener advertising `kafka:9092` would therefore be
+unreachable from the host even with the port published, because `kafka` does not
+resolve outside the Compose network. The internal listener keeps the canonical
+port so containers need no special configuration, and the `local` profile points
+at `localhost:29092` for running a service from the IDE against the containerised
+broker.
+
+### 19. The broker is gated by a healthcheck, and its data outlives the container
+
+Kafka needs several seconds before it accepts connections, so both services will
+crash-loop on a cold start without `depends_on: condition: service_healthy`. The
+healthcheck asks the broker for its API versions over the internal listener,
+which tests the thing that actually matters — that the listener is accepting
+clients — rather than merely that a process exists. Measured cold start to
+healthy on this machine is about seven seconds, with `start_period` absorbing the
+window before that.
+
+Log directories point at a named volume rather than the image's default under
+`/tmp`, so a restarted container keeps its data. This is what makes the replay
+argument in decision 2 real: `docker compose down` followed by `up` preserves the
+topic, its records and the committed offsets. Topic auto-creation is disabled, so
+a typo in a topic name fails loudly instead of silently creating an empty topic;
+the topic is created deliberately, by a `NewTopic` bean in the producer.
+
+### 20. Layered images built by a pinned Gradle, run as a non-root user
+
+Both services use the same three-stage Dockerfile. A `gradle:9-jdk25` stage
+compiles and packages; a second stage runs Spring Boot's `jarmode=tools`
+extractor to split the fat jar into its four layers; a final
+`eclipse-temurin:25-jre-alpine` stage copies those layers in slowest-changing
+order and runs as an unprivileged user. The runtime image carries a JRE rather
+than a JDK, and no build tooling at all — about 366 MB each.
+
+The build stage copies `settings.gradle.kts` and `build.gradle.kts` and resolves
+the runtime classpath *before* copying `src`, so a source-only change reuses the
+cached dependency layer. This narrows, without closing, the Maven gap noted in
+decision 15: measured here, a rebuild after a source edit takes 8 seconds
+against 25 for a cold one. A BuildKit cache mount would do better still, but
+behaves differently when BuildKit is disabled, and a first run that works
+everywhere matters more than a faster second one.
+
+The wrapper is excluded from the build context along with `build/` and `.gradle/`
+(see decision 17). Excluding it is what makes the image's independence from it
+verifiable rather than merely intended.
+
+The heap is sized with `-XX:MaxRAMPercentage` on the command line rather than
+through `JAVA_TOOL_OPTIONS`, because that variable makes the JVM print a
+"Picked up" line to stderr — harmless anywhere else, but the consumer's output
+format is fixed by the brief and the log should carry nothing that is not meant
+to be there.
+
+### 21. The services are kept alive explicitly
+
+Neither service serves HTTP, so nothing in a bare Spring Boot application holds
+the JVM open: both start, find no non-daemon thread to wait on, and exit 0.
+Under `restart: unless-stopped` that becomes a restart loop — the exact failure
+the brief's "must execute cleanly out of the box" is about, arriving not from a
+bug but from a healthy application having nothing to do yet.
+
+`spring.main.keep-alive` is set instead of relying on a side effect. Once the
+listener container and the scheduler exist, each would hold the JVM open on its
+own, so the property becomes redundant — but it states the intent directly
+rather than leaving liveness as something that happens to fall out of an
+unrelated component.

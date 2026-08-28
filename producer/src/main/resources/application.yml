@@ -1,6 +1,8 @@
 spring:
   application:
     name: producer
+  main:
+    keep-alive: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
 

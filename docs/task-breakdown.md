@@ -3,7 +3,7 @@
 Working checklist. One task is intended to be one commit, so the history reads
 as the order the system was actually built in.
 
-Tasks 1–15 make a complete submission. 16 and 17 are optional.
+Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
 
 ## Phase 1 — Structure and infrastructure
 
@@ -17,13 +17,13 @@ Tasks 1–15 make a complete submission. 16 and 17 are optional.
       → `2. producer spring boot project skeleton`
 - [X] **3. Consumer skeleton.** Same shape.
       → `3. consumer spring boot project skeleton`
-- [ ] **4. Kafka service.** `docker-compose.yml` with Kafka only — KRaft mode,
+- [X] **4. Kafka service.** `docker-compose.yml` with Kafka only — KRaft mode,
       capped heap, healthcheck. Prove it reaches healthy and create the topic by
       hand to confirm.
       → `4. kafka service in kraft mode + healthcheck`
-- [ ] **5. Containerise and orchestrate.** Dockerfiles for both services,
+- [X] **5. Containerise and orchestrate.** Dockerfiles for both services,
       `.dockerignore`s, compose wiring all three with
-      `depends_on: condition: service_healthy`, root `Makefile`.
+      `depends_on: condition: service_healthy`.
       → `5. dockerfiles + compose orchestrating all three services`
 
 > **Gate:** `docker compose up --build` from clean must bring up all three
@@ -85,3 +85,9 @@ Unhurried. This is the part the technical interview will actually probe.
 - [ ] **17. _Optional, cut first._** Precision/recall reporting against the
       producer's ground-truth flag.
       → `17. detection precision and recall reporting`
+- [ ] **18. _Optional._** `Makefile` giving one entry point for the commands
+      that otherwise live in three places — `./gradlew` in each project and
+      `docker compose` at the root. Deferred deliberately: every target is a
+      shortcut for a command the README documents on its own, so nothing
+      depends on it and it can be dropped without touching another file.
+      → `18. makefile as a convenience entry point`
