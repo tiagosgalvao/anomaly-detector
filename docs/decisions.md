@@ -32,6 +32,8 @@ outcome.
 | [22](#22-the-producers-wire-format-is-configured-not-hand-rolled) | Configured serializers, no type headers | Jackson 3 and renamed spring-kafka classes; the type header would couple the services. |
 | [23](#23-configuration-is-validated-when-the-context-starts-not-when-a-value-is-used) | Configuration validated at startup | A bad value fails the container immediately instead of emitting `NaN` much later. |
 | [24](#24-the-producer-publishes-with-acksall) | `acks=all` on the producer | The only setting that keeps the idempotent producer; `acks=1` disables it *silently*. |
+| [25](#25-the-producer-sends-a-primitive-double-the-consumer-reads-a-boxed-double) | `double` out, `Double` in | Only the parsing side can encounter absence, and a primitive would fabricate `0.0`. |
+| [26](#26-the-consumer-states-its-target-type-and-refuses-type-headers) | Consumer states its own target type | It never takes deserialisation instructions from the wire. |
 
 ---
 
@@ -61,6 +63,11 @@ stream — and being random, it is not the same stream. Retention gives the
 related property that an alert can be traced back to the exact record that
 produced it, which is a routine operational question for anything that fires
 alarms.
+
+Both properties are asserted in `ReplayIntegrationTest`: one test resets the
+consumer group's offset and checks the same records are delivered a second time,
+the other stops the consumer, publishes while it is down, and checks nothing is
+missed. The argument for the broker is therefore executable, not just prose.
 
 **Cost, stated plainly:** Kafka is the heaviest of the four options. It needs a
 capped heap and several seconds to become ready, which forces a healthcheck and
@@ -401,3 +408,43 @@ followers rather than replying immediately. At ten small messages per second tha
 is irrelevant, and it is the correct default to carry into a real cluster, where
 `acks=all` should be paired with `min.insync.replicas=2` so a lone surviving
 replica rejects writes rather than silently accepting them.
+
+### 25. The producer sends a primitive `double`, the consumer reads a boxed `Double`
+
+The asymmetry is deliberate, and boxing both sides "for consistency" was considered
+and declined. The two records are not two copies of one type — they are an output
+contract and an input projection (decision 6), and they differ because their jobs
+differ.
+
+The producer **constructs** its value. It comes from `nextGaussian()` arithmetic over
+configuration validated at startup (decision 23), and the publisher checks
+`Double.isFinite` before sending. Absence is not reachable, so a boxed type would add
+a null case that can never occur — and `Double.isFinite(dataPoint.value())` would
+auto-unbox, creating an NPE path where none exists today.
+
+The consumer **parses** its value, and parsing is exactly where absence appears. A
+record binds through its canonical constructor, so a payload with no `value` key
+supplies the type default — and for a primitive that is `0.0`, indistinguishable from
+a genuine reading of zero. Against a window centred on 50 with sigma 5, a fabricated
+`0.0` scores **Z = 10** and prints `ANOMALY DETECTED!`. Schema drift would be reported
+as a *detection*: silent, and shaped exactly like success. Boxing is the only way to
+make "absent" expressible, and tests pin the behaviour rather than trusting it.
+
+Worth knowing, because Jackson 2 material misleads here: of the three relevant
+defaults in Jackson 3, `FAIL_ON_UNKNOWN_PROPERTIES` flipped to `false` (tolerant
+reading is now the default) and `FAIL_ON_NULL_FOR_PRIMITIVES` flipped to `true`, but
+`FAIL_ON_MISSING_CREATOR_PROPERTIES` remains `false` — which is why the absent-field
+case survives and needed handling.
+
+### 26. The consumer states its target type and refuses type headers
+
+`spring.json.value.default.type` names the consumer's own record, and
+`spring.json.use.type.headers` is disabled. The first is required because the producer
+sends no type header (decision 22); the second means that even if some future producer
+did send one, it would be ignored rather than obeyed — `JacksonJsonDeserializer`
+honours such headers by default, and would try to load a class belonging to another
+service.
+
+Together with decision 22 this closes the loop from both ends: the producer does not
+put a class name on the wire, and the consumer would not act on one if it found it.
+Deserialisation is the consumer's decision alone.

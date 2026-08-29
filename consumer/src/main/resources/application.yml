@@ -5,6 +5,22 @@ spring:
     keep-alive: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    consumer:
+      group-id: anomaly-detector
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        # The payload carries no type header, so the target type is stated here.
+        # Honouring a header is disabled outright: it would name a class belonging to the producer.
+        spring.json.value.default.type: com.anomaly.consumer.DataPoint
+        spring.json.use.type.headers: false
+    listener:
+      ack-mode: manual_immediate
+
+consumer:
+  topic: metrics.raw
 
 logging:
   level:

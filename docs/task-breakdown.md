@@ -36,8 +36,9 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
       seeded `Random`, scheduled publisher, topic created via a `NewTopic` bean,
       messages keyed by `seriesId`.
       → `6. producer publishing generated data points to kafka`
-- [ ] **7. Consumer subscribes.** Tolerant-reader record, manual acknowledgement,
-      auto-commit disabled. Logs raw payloads for now.
+- [X] **7. Consumer subscribes.** Tolerant-reader record, manual acknowledgement,
+      auto-commit disabled. Logs raw payloads for now. Integration tests cover
+      replay after an offset reset, and no loss while the consumer is stopped.
       → `7. consumer subscribing to the metrics topic`
 
 ## Phase 3 — Detection core ***
