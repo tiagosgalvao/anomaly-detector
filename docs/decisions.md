@@ -4,6 +4,35 @@ A record of the choices made building this service, and what each one costs.
 The brief leaves most of these open, so the reasoning matters more than the
 outcome.
 
+## At a glance
+
+| # | Decision | In one line |
+| --- | --- | --- |
+| [1](#1-three-services-not-the-single-container-simplification) | Three services, not the permitted single container | The queue mechanics are most of the exercise, so the harder path is the one worth taking. |
+| [2](#2-kafka-as-the-messaging-system) | Kafka, in KRaft mode | Chosen for **replay**, not scale: tuning a detector needs the same data re-run under new parameters. |
+| [3](#3-kafka-streams-is-not-used) | No Kafka Streams | Its windowing is time-based; this window is count-based, so the ring buffer gets written either way. |
+| [4](#4-one-series-one-partition--with-per-series-windows-regardless) | One series, one partition | Correct for one order-sensitive series — but windows are keyed by series anyway. |
+| [5](#5-json-on-the-wire-not-a-bare-number) | JSON payload, not a bare number | A bare double forfeits the partition key, the timestamp and any identifier. |
+| [6](#6-no-shared-dto-artifact--the-consumer-is-a-tolerant-reader) | No shared DTO — tolerant reader | Keeps deployments independent, and makes the ground-truth flag structurally unreachable from the detector. |
+| [7](#7-sample-standard-deviation-not-population) | Sample standard deviation (n − 1) | The window is a sample of an ongoing process, not a population. |
+| [8](#8-mean-and-sigma-recomputed-per-point-on-rather-than-maintained-in-o1) | O(N) recompute, not O(1) running sums | Clarity over cleverness; running sums drift and can catastrophically cancel. |
+| [9](#9-each-point-is-scored-against-the-window-before-it-is-inserted) | Score before inserting the point | A point inside its own baseline contaminates it and caps the Z-score at ≈6.93. |
+| [10](#10-detected-anomalies-are-excluded-from-the-window) | Anomalies excluded from the window | Prevents sigma inflation — at the cost of never adapting to a genuine level shift. |
+| [11](#11-a-threshold-of-z--3-has-a-known-false-positive-rate) | Z > 3 flags ~0.27% by construction | That is the definition of the threshold, not a defect. Measured at 0.23%. |
+| [12](#12-non-finite-values-are-rejected-at-the-boundary) | Non-finite values rejected at the boundary | One `NaN` in the ring buffer poisons every later Z-score. |
+| [13](#13-at-least-once-delivery) | At-least-once delivery | Redelivery is preferable to loss; the cost is a point that can enter the window twice. |
+| [14](#14-two-independent-projects-rather-than-a-multi-module-build) | Two independent Gradle projects | A repository boundary is not a build boundary; each service owns its Docker context. |
+| [15](#15-gradle-over-maven) | Gradle over Maven | Familiarity, with Maven's cleaner dependency-caching idiom acknowledged. |
+| [16](#16-kotlin-dsl-for-the-build-scripts) | Kotlin DSL for build scripts | Statically typed build files; Gradle's default for new builds since 8.2. |
+| [17](#17-a-pinned-toolchain-image-for-container-builds) | Pinned Gradle image, not the wrapper | The image must not depend on a jar an email filter can strip. |
+| [18](#18-two-broker-listeners-one-internal-and-one-for-the-host) | Two broker listeners | Clients connect to what the broker *advertises*, so the host needs its own listener. |
+| [19](#19-the-broker-is-gated-by-a-healthcheck-and-its-data-outlives-the-container) | Healthcheck gate, data on a volume | Without it both services crash-loop on a cold start; the volume is what makes replay real. |
+| [20](#20-layered-images-built-by-a-pinned-gradle-run-as-a-non-root-user) | Layered images, non-root runtime | Dependencies cached separately from application code; no build tooling in the runtime image. |
+| [21](#21-the-services-are-kept-alive-explicitly) | Liveness stated, not inherited | Headless Boot apps exit 0; under `restart: unless-stopped` that is a restart loop. |
+| [22](#22-the-producers-wire-format-is-configured-not-hand-rolled) | Configured serializers, no type headers | Jackson 3 and renamed spring-kafka classes; the type header would couple the services. |
+| [23](#23-configuration-is-validated-when-the-context-starts-not-when-a-value-is-used) | Configuration validated at startup | A bad value fails the container immediately instead of emitting `NaN` much later. |
+| [24](#24-the-producer-publishes-with-acksall) | `acks=all` on the producer | The only setting that keeps the idempotent producer; `acks=1` disables it *silently*. |
+
 ---
 
 ## Architecture
@@ -289,3 +318,86 @@ listener container and the scheduler exist, each would hold the JVM open on its
 own, so the property becomes redundant — but it states the intent directly
 rather than leaving liveness as something that happens to fall out of an
 unrelated component.
+
+### 22. The producer's wire format is configured, not hand-rolled
+
+Values are serialised with spring-kafka's `JacksonJsonSerializer` and keys with the
+plain `StringSerializer`. Two details are worth knowing, because both differ from
+what most published examples show: Boot 4 ships **Jackson 3** (`tools.jackson`,
+pulled in explicitly — the Kafka starter brings no JSON library of its own), and
+spring-kafka 4 renamed the serializers, deprecating the `JsonSerializer` that Boot
+3 material refers to.
+
+`spring.json.add.type.headers` is **disabled**. Left on, every record carries a
+`__TypeId__` header naming `com.anomaly.producer.DataPoint`, inviting the consumer
+to deserialise into a class it does not have and coupling the two services through
+a header. Turning it off is what makes decision 6's tolerant reader real rather
+than aspirational, so a test asserts the header is absent.
+
+The producer also sets `acks=all`; that one has enough behind it to be its own
+entry — see decision 24.
+
+### 23. Configuration is validated when the context starts, not when a value is used
+
+`ProducerProperties` is a record whose compact constructor rejects a non-finite
+mean, a non-positive standard deviation, a probability outside [0, 1] and an
+inverted sigma range. A bad value therefore fails the container at startup with a
+message naming the property, rather than silently producing `NaN` points that
+poison the consumer's window much later and much less obviously. This is done with
+a plain constructor rather than `spring-boot-starter-validation`, which would add
+a dependency for four checks.
+
+### 24. The producer publishes with `acks=all`
+
+`acks` controls how much durability the broker must demonstrate before a send is
+reported successful:
+
+| Setting | The broker replies when | Loses data if |
+| --- | --- | --- |
+| `0` | never — the client does not wait | anything at all goes wrong; the send is not even confirmed to have arrived |
+| `1` | the partition leader has written the record | the leader fails before a follower replicates it |
+| `all` | every in-sync replica has written it | every in-sync replica fails |
+
+**On this stack the three are nearly indistinguishable.** With one broker and a
+replication factor of 1, the leader *is* the only replica, so `all` and `1`
+require the same single write. Choosing `all` on those grounds alone would be
+cargo-culting, and worth saying so plainly.
+
+The reason it is set is a second, less obvious effect. Since Kafka 3.0
+`enable.idempotence` defaults to `true`, and idempotence *requires* `acks=all`.
+When the two conflict the client does not complain — it resolves the conflict by
+turning idempotence off. Probing `ProducerConfig` directly with the 4.2.1 client
+shows exactly that:
+
+```
+acks=all                          -> idempotence=true
+acks=1                            -> idempotence=false      <- silently
+acks=0                            -> idempotence=false      <- silently
+acks=1 + enable.idempotence=true  -> ConfigException: Must set acks to all in
+                                     order to use the idempotent producer.
+```
+
+So `acks=1` is not the small durability relaxation it appears to be. It quietly
+drops the producer's exactly-once-per-partition write guarantee, and the only
+visible trace is the absence of `Instantiated an idempotent producer` in the
+startup log — which this service does log.
+
+**Why idempotence matters here.** `retries` defaults to `Integer.MAX_VALUE`, so a
+send whose acknowledgement is lost in flight *will* be retried. Without
+idempotence that retry appends a second copy of the same point. The consumer's
+window is order- and count-sensitive: a duplicated value shifts the mean, inflates
+sigma, and biases the next Z-score. Duplicates are not an abstract concern for
+this workload — they are a direct corruption of the statistic. Idempotence gives
+each record a sequence number the broker uses to discard exactly this kind of
+retry.
+
+Note that this is a *producer-side* guarantee only, and does not contradict the
+at-least-once consumer contract in decision 13: the broker will not store a
+duplicate the producer retried, but a consumer that crashes after processing and
+before committing will still reprocess a record.
+
+**Cost.** Latency, once there is more than one replica — the leader waits for
+followers rather than replying immediately. At ten small messages per second that
+is irrelevant, and it is the correct default to carry into a real cluster, where
+`acks=all` should be paired with `min.insync.replicas=2` so a lone surviving
+replica rejects writes rather than silently accepting them.

@@ -32,7 +32,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
 
 ## Phase 2 — Messaging
 
-- [ ] **6. Producer publishes.** `DataPoint` record, gaussian generator with a
+- [X] **6. Producer publishes.** `DataPoint` record, gaussian generator with a
       seeded `Random`, scheduled publisher, topic created via a `NewTopic` bean,
       messages keyed by `seriesId`.
       → `6. producer publishing generated data points to kafka`
@@ -40,9 +40,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
       auto-commit disabled. Logs raw payloads for now.
       → `7. consumer subscribing to the metrics topic`
 
-## Phase 3 — Detection core
-
-Unhurried. This is the part the technical interview will actually probe.
+## Phase 3 — Detection core ***
 
 - [ ] **8. `RollingWindow` + tests.** Fixed-capacity ring buffer, mean and
       sample standard deviation recomputed per call.

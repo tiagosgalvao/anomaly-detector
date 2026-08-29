@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-kafka")
+	implementation("tools.jackson.core:jackson-databind")
 	testImplementation("org.springframework.boot:spring-boot-starter-kafka-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
