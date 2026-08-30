@@ -15,18 +15,24 @@ class DataPointListener {
 
     private final SeriesDetectors seriesDetectors;
     private final DetectionReporter reporter;
+    private final DataPointValidator validator;
 
-    DataPointListener(SeriesDetectors seriesDetectors, DetectionReporter reporter) {
+    DataPointListener(SeriesDetectors seriesDetectors, DetectionReporter reporter,
+                      DataPointValidator validator) {
         this.seriesDetectors = seriesDetectors;
         this.reporter = reporter;
+        this.validator = validator;
     }
 
-    // idIsGroup = false: the id names the container only. Left at its default, spring-kafka would use it
-    // as the consumer group id too, silently overriding spring.kafka.consumer.group-id.
     @KafkaListener(id = CONTAINER_ID, idIsGroup = false, topics = "${consumer.topic}")
     void onDataPoint(DataPoint dataPoint, Acknowledgment acknowledgment) {
-        log.debug("received data point id:{} series:{} value:{}",
-                dataPoint.id(), dataPoint.seriesId(), dataPoint.value());
+        log.debug("received data point id:{} series:{} value:{} timestamp:{}",
+                dataPoint.id(),
+                dataPoint.seriesId(),
+                dataPoint.value(),
+                dataPoint.timestamp());
+
+        validator.validate(dataPoint);
 
         var detection = seriesDetectors.evaluate(dataPoint.seriesId(), dataPoint.value());
         reporter.report(dataPoint.timestamp(), detection);

@@ -56,7 +56,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
 
 ## Phase 4 — Robustness
 
-- [ ] **11. Invalid input handling.** `Double.isFinite` guard at the consumer
+- [X] **11. Invalid input handling.** `Double.isFinite` guard at the consumer
       boundary, malformed payload handling, dead-letter topic. With tests.
       → `11. invalid payload handling + dead letter topic`
 - [ ] **12. Graceful shutdown.** Clean `SIGTERM` handling so `docker compose

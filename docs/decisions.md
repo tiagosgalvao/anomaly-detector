@@ -34,6 +34,8 @@ outcome.
 | [24](#24-the-producer-publishes-with-acksall) | `acks=all` on the producer | The only setting that keeps the idempotent producer; `acks=1` disables it *silently*. |
 | [25](#25-the-producer-sends-a-primitive-double-the-consumer-reads-a-boxed-double) | `double` out, `Double` in | Only the parsing side can encounter absence, and a primitive would fabricate `0.0`. |
 | [26](#26-the-consumer-states-its-target-type-and-refuses-type-headers) | Consumer states its own target type | It never takes deserialisation instructions from the wire. |
+| [27](#27-bad-payloads-go-to-a-dead-letter-topic-without-being-retried) | Dead letter topic, no retries | Every failure this consumer raises is a property of the bytes; retrying would stall the partition forever. |
+| [28](#28-the-kafka-listeners-id-names-the-container-not-the-consumer-group) | Listener id is not the group id | `idIsGroup` defaults to `true` and would silently override the configured consumer group. |
 
 ---
 
@@ -460,3 +462,38 @@ service.
 Together with decision 22 this closes the loop from both ends: the producer does not
 put a class name on the wire, and the consumer would not act on one if it found it.
 Deserialisation is the consumer's decision alone.
+
+### 27. Bad payloads go to a dead letter topic, without being retried
+
+Three things had to line up for a poison record to leave the partition rather than block it.
+
+The JSON deserializer is wrapped in `ErrorHandlingDeserializer`. Unwrapped, a payload that cannot be parsed
+throws inside the container where the listener's error handling cannot see it, and the partition redelivers
+the same bytes indefinitely.
+
+The error handler retries **zero** times before recovering. Every failure this consumer can raise —
+unparseable JSON, a non-numeric value, a missing value, a non-finite value — is a property of the record
+itself and would fail identically on every attempt. The consumer does no I/O beyond Kafka, so there is no
+transient failure for a retry to rescue; retrying would only hold up every record behind one that can never
+succeed. A consumer that called a database or an HTTP service would want a backoff here instead.
+
+The destination topic is named explicitly rather than left to the default resolver. The default derives
+`metrics.raw-dlt` while the declared topic is `metrics.raw.DLT`, and because broker-side auto-creation is
+off (decision 19) that mismatch makes the recovery itself fail — the record is neither processed nor
+dead-lettered. The topic is declared with a `NewTopic` bean for the same reason.
+
+Records arrive in the form that is most useful for diagnosis: one that failed to deserialize is forwarded as
+the original bytes, so what actually arrived can be read; one that parsed but failed validation is written
+as JSON. That needs a serializer chosen per type on the dead letter producer.
+
+The recoverer routes to the dead letter topic's partition `-1`, leaving the choice to the broker, rather
+than mirroring the source record's partition. The two topics have no reason to share a partition count —
+the dead letter topic is a diagnostic sink, not a second order-sensitive stream — so pinning to the source
+partition would only fail outright once the two counts diverge.
+
+### 28. The Kafka listener's id names the container, not the consumer group
+
+`@KafkaListener` defaults `idIsGroup` to `true`, so leaving it unset would make `CONTAINER_ID` double as the
+consumer group id and silently override `spring.kafka.consumer.group-id`. It is set to `false` explicitly so
+the id only names the listener container — the identity `ReplayIntegrationTest` and `DeadLetterIntegrationTest`
+use to start and stop it — leaving group membership to the configured property alone.

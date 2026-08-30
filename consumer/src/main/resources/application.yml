@@ -10,8 +10,12 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      # Wrapping the JSON deserializer means an unparseable payload surfaces as a failed record the error
+      # handler can route away, instead of throwing where nothing can catch it and leaving the partition
+      # stuck redelivering the same bytes forever.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
         # The payload carries no type header, so the target type is stated here.
         # Honouring a header is disabled outright: it would name a class belonging to the producer.
         spring.json.value.default.type: com.anomaly.consumer.DataPoint
