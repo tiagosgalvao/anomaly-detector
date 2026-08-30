@@ -90,13 +90,26 @@ not a Z-score.
 **Scoring waits for a full window.** A single value has no deviation and a handful gives an unstable one.
 Readings arriving during warm-up are still printed, in the normal format with a Z-score of `0.00`.
 
-### The false-positive rate is a property of the threshold
+### The false-positive rate, measured rather than assumed
 
-On genuinely normal data, `Z > 3` flags about **0.27%** of readings by construction — roughly one false
-alarm every six minutes at ten readings a second. Measured over 900 points of real output from this
-producer: **0.23%**. That is not a defect to be tuned away; raising the threshold trades those alarms for
-missed anomalies. Because μ and σ are *estimated* from 50 samples rather than known, the true tail is
-slightly fatter than the normal distribution implies.
+The textbook figure for `Z > 3` is **0.27%** of readings — but that is the rate when μ and σ are *known*.
+They are not; they are estimated from 50 samples. Measured over 200,000 generated readings
+(`DetectionQualityTest`), the detector's real rate is about **0.55%** — roughly twice the textbook number.
+Two effects account for it, and they can be separated by measurement:
+
+| Configuration | False-positive rate |
+| --- | --- |
+| Textbook, σ known | 0.27% |
+| σ estimated from a 50-point window | 0.44% |
+| …and flagged readings held out of the window | 0.55% |
+
+Estimating σ from a small sample fattens the tail the way Student's t does. Holding anomalies out of the
+window — the choice described above — then keeps σ slightly tighter than the truth, which flags a few more
+readings still. It is a real cost of that decision, and small next to the masking it prevents.
+
+Over the same 200,000 readings, **recall was 1.000** — every injected anomaly caught, none missed — at a
+**precision of 0.77**. Roughly a quarter of the alerts are false alarms. That is the honest trade at this
+threshold, and it is why the alert-fatigue point below is the first thing in Up Next.
 
 ---
 
@@ -260,8 +273,9 @@ What I would add to run this for real, and what is missing today.
 
 ### Tooling
 
-CI is the first gap worth closing, and the workflow in `.github/workflows/ci.yml` builds and tests both
-services on every push. On top of that:
+CI is the first gap worth closing: a GitHub Actions workflow building and testing both services on every
+push, and starting the stack with `docker compose up --wait` so the one requirement that cannot be allowed
+to break is checked rather than trusted. On top of that:
 
 - **Coverage and static analysis** — JaCoCo with a threshold that fails the build, plus ErrorProne or
   SpotBugs. Spotless with google-java-format to stop style being a review topic.
@@ -320,10 +334,26 @@ Ordered by how much they would bother me in production:
 5. **No handling of drift or late data.** A slow ramp is never flagged, because the window drifts with it.
    Out-of-order or late readings are scored in arrival order regardless of their timestamps, which for a
    window this small can matter.
-6. **The detector is not idempotent.** Delivery is at-least-once, so a redelivered reading enters the window
-   twice and slightly skews it. Deduplicating on the message id would fix it; the id is already there.
-7. **A single point of failure by construction.** One partition means one consumer. That is the right
+6. **A single point of failure by construction.** One partition means one consumer. That is the right
    configuration for one order-sensitive series, but it means the detector has no redundancy — a consumer
    outage is a detection outage, mitigated only by the fact that replay lets it catch up afterwards.
-8. **No backpressure story beyond Kafka's own.** If the detector fell permanently behind, lag would grow
+7. **No backpressure story beyond Kafka's own.** If the detector fell permanently behind, lag would grow
    without bound until retention dropped data. Detecting that needs the lag alerting mentioned above.
+8. **The detector is not idempotent — measured, and it matters less than it sounds.** Delivery is
+   at-least-once, so a redelivered reading can enter the window twice. Replaying 60,000 readings with 1% of
+   them redelivered — far above any realistic rate — changed **30 detection verdicts out of 59,950, or
+   0.05%** (`DuplicateDeliveryImpactTest`). A duplicated *anomaly* has no effect at all, because flagged
+   readings are never admitted to the window; the worst a duplicated normal reading can do is shift the mean
+   by 0.12σ.
+
+   Deduplicating on the message id is the obvious fix, and the id is already in the payload — but an
+   in-memory set would not fire when it is actually needed. Redelivery follows a crash or a rebalance: after
+   a crash the process restarts with an empty dedup set *and an empty window*, so there is nothing to skew;
+   after a rebalance the partition moves to an instance whose set is equally empty. Such a set would only
+   catch duplicates arriving within one process's lifetime, which in practice means producer retries — and
+   the idempotent producer already prevents those. Real deduplication needs shared, durable state, which is
+   the same problem as the in-memory window above and has the same answers.
+
+   The duplicate's real cost is not statistical, it is a repeated line of output — and a repeated *alert*.
+   That belongs with the missing alert sink in point 1, as suppression and deduplication at the point of
+   notification rather than at the point of measurement.

@@ -18,9 +18,9 @@ outcome.
 | [8](#8-mean-and-sigma-recomputed-per-point-on-rather-than-maintained-in-o1)           | O(N) recompute, not O(1) running sums | Clarity over cleverness; running sums drift and can catastrophically cancel. |
 | [9](#9-each-point-is-scored-against-the-window-before-it-is-inserted)                 | Score before inserting the point | A point inside its own baseline contaminates it and caps the Z-score at ≈6.93. |
 | [10](#10-detected-anomalies-are-excluded-from-the-window)                             | Anomalies excluded from the window | Prevents sigma inflation — at the cost of never adapting to a genuine level shift. |
-| [11](#11-a-threshold-of-z--3-has-a-known-false-positive-rate)                         | Z > 3 flags ~0.27% by construction | That is the definition of the threshold, not a defect. Measured at 0.23%. |
+| [11](#11-a-threshold-of-z--3-has-a-known-false-positive-rate)                         | Z > 3 flags ~0.27% in theory, 0.55% here | Estimating sigma from 50 samples, and excluding anomalies, roughly doubles the textbook rate. |
 | [12](#12-non-finite-values-are-rejected-at-the-boundary)                              | Non-finite values rejected at the boundary | One `NaN` in the ring buffer poisons every later Z-score. |
-| [13](#13-at-least-once-delivery)                                                      | At-least-once delivery | Redelivery is preferable to loss; the cost is a point that can enter the window twice. |
+| [13](#13-at-least-once-delivery)                                                      | At-least-once delivery | Redelivery is preferable to loss; measured, it changes 0.05% of verdicts. |
 | [14](#14-two-independent-projects-rather-than-a-multi-module-build)                   | Two independent Gradle projects | A repository boundary is not a build boundary; each service owns its Docker context. |
 | [15](#15-gradle-over-maven)                                                           | Gradle over Maven | Familiarity, with Maven's cleaner dependency-caching idiom acknowledged. |
 | [16](#16-kotlin-dsl-for-the-build-scripts)                                            | Kotlin DSL for build scripts | Statically typed build files; Gradle's default for new builds since 8.2. |
@@ -157,6 +157,12 @@ they are the producer's output contract and the consumer's input projection,
 which legitimately differ. The scaled-up answer is schema-first code generation
 against a registry, not a shared jar; see **Up Next**.
 
+The same boundary means detection quality cannot be measured from inside the running service: scoring
+precision and recall needs to know which readings were genuinely anomalous, and that label lives only in the
+producer's `injectedAnomaly` field, which the consumer's model has no way to see. `DetectionQualityTest` and
+`DuplicateDeliveryImpactTest` measure it instead against `SyntheticStream`, a labelled stream generated in
+the test harness for exactly this purpose — ground truth stays a test concern, never a runtime one.
+
 ---
 
 ## Statistical model
@@ -201,11 +207,21 @@ and sigma are *estimated* from a finite window rather than known, the real tail
 is somewhat fatter than the normal distribution implies, so the observed rate
 runs slightly higher.
 
-Measured on 900 points of live output from the producer, 0.23% of baseline points
-exceeded three sigma — consistent with the 0.27% the threshold defines, at that
-sample size. Worth being able to say out loud: a false positive every few minutes
-is not a bug to be fixed by raising the threshold, it is the cost of choosing
-three sigma, and raising it trades those alarms for missed anomalies.
+**Measured, the real rate is about double that: 0.55%.** Over 200,000 generated
+readings the detector raised a false alarm on 0.55% of baseline points, with a
+recall of 1.000 and a precision of 0.77. Two effects separate out cleanly:
+estimating sigma from a 50-point window rather than knowing it takes the rate from
+0.27% to 0.44%, and holding flagged readings out of the window (decision 10) takes
+it to 0.55%, because the window stays slightly cleaner than the process it models.
+
+An earlier reading of 0.23%, taken from 900 live points, was simply too small a
+sample to say anything — at that size fewer than three false alarms were expected,
+so the figure carried no information. `DetectionQualityTest` now pins the real
+numbers.
+
+Worth being able to say out loud: a false positive every couple of minutes is not
+a bug to be fixed by raising the threshold, it is the cost of choosing three sigma
+on estimated parameters, and raising it trades those alarms for missed anomalies.
 
 ### 12. Non-finite values are rejected at the boundary
 
@@ -233,6 +249,16 @@ between the two causes redelivery rather than loss. The consequence is owned:
 the detector is not idempotent, and a redelivered point enters the window twice,
 very slightly skewing it. Given the alternative is losing data points entirely,
 that is the right trade for this workload.
+
+**Measured, the skew is close to nothing.** `DuplicateDeliveryImpactTest` replays 60,000 readings with 1% of
+them redelivered — far above any rate at-least-once would realistically produce — and compares the resulting
+detections against a clean run: 30 verdicts out of 59,950 change, 0.05%. A redelivered *anomaly* has no
+effect at all, because flagged readings are never admitted to the window (decision 10); a redelivered normal
+reading shifts the mean by roughly 0.12σ. Deduplicating on the message id would close even that gap, and the
+id is already in the payload, but an in-memory set would not fire when it is actually needed — redelivery
+follows a crash or a rebalance, both of which hand the record to a process whose set starts empty. Real
+deduplication needs the same durable, shared state the window itself would need to survive a restart; see
+**Up Next**.
 
 ### 14. Two independent projects rather than a multi-module build
 

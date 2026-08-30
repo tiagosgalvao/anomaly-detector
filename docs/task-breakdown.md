@@ -3,7 +3,7 @@
 Working checklist. One task is intended to be one commit, so the history reads
 as the order the system was actually built in.
 
-Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
+Tasks 1–16 make a complete submission. 17 and 18 are optional.
 
 ## Phase 1 — Structure and infrastructure
 
@@ -73,17 +73,24 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
       diagram, configuration table, the statistical model, the replay
       demonstration, and the **Up Next** section.
       → `14. project readme + up next section`
+- [X] **15. Detection quality, measured.** Precision, recall and the real
+      false-positive rate against a synthetic stream whose anomalies are known,
+      plus the cost of at-least-once redelivery. Built as tests rather than a
+      runtime reporter: measuring quality in the running service would mean
+      reading the producer's `injectedAnomaly` flag, which the consumer
+      deliberately does not model. Promoted ahead of the remaining tasks because
+      the README and the decision log quote these numbers, and a figure without
+      its measurement behind it is worth little.
+      → `15. detection quality measurement + up next analysis`- 
 
-## Phase 6 — CI and optional extras
+## Phase 6 — Evidence, CI and optional extras
 
-- [ ] **15. Continuous integration.** GitHub Actions building and testing both
+- [ ] **16. Continuous integration.** GitHub Actions building and testing both
       projects on push.
-      → `15. github actions ci for both services`
-- [ ] **16. _Optional._** Testcontainers integration test.
-      → `16. kafka integration test with testcontainers`
-- [ ] **17. _Optional, cut first._** Precision/recall reporting against the
-      producer's ground-truth flag.
-      → `17. detection precision and recall reporting`
+      → `16. github actions ci for both services`
+- [ ] **17. _Optional._** Testcontainers integration test against the broker
+      image the stack actually deploys.
+      → `17. kafka integration test with testcontainers`
 - [ ] **18. _Optional._** `Makefile` giving one entry point for the commands
       that otherwise live in three places — `./gradlew` in each project and
       `docker compose` at the root. Deferred deliberately: every target is a
