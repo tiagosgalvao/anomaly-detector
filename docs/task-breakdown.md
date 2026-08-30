@@ -69,7 +69,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
       and kept current as decisions are made; this is the closing review, not a
       reconstruction at the end.
       → `13. final pass on the decision log`
-- [ ] **14. README.** What it is, how to run it, sample output, architecture
+- [X] **14. README.** What it is, how to run it, sample output, architecture
       diagram, configuration table, the statistical model, the replay
       demonstration, and the **Up Next** section.
       → `14. project readme + up next section`
