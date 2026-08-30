@@ -21,6 +21,10 @@ spring:
 
 consumer:
   topic: metrics.raw
+  window-size: 50
+  threshold: 3.0
+  # Scoring waits for a full window: a partly filled one gives an unstable estimate of the deviation.
+  minimum-samples: 50
 
 logging:
   level:

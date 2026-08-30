@@ -50,7 +50,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
       inserting the point, warm-up handling, near-zero sigma guard, detected
       anomalies excluded from the window.
       → `9. z-score anomaly detector + tests`
-- [ ] **10. Wire up output.** Detector into the listener, per-series windows,
+- [X] **10. Wire up output.** Detector into the listener, per-series windows,
       and the exact output format via a dedicated logger and `Locale.ROOT`.
       → `10. detector wired into consumer + spec-compliant output`
 

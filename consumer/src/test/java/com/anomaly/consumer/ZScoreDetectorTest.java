@@ -108,7 +108,7 @@ class ZScoreDetectorTest {
                 .map(Detection::zScore)
                 .toList();
 
-        assertThat(scores).allSatisfy(score -> assertThat(Double.isFinite(score)).isTrue());
+        assertThat(scores).isNotEmpty().allSatisfy(score -> assertThat(Double.isFinite(score)).isTrue());
     }
 
     @Test
