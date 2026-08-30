@@ -37,6 +37,7 @@ outcome.
 | [27](#27-bad-payloads-go-to-a-dead-letter-topic-without-being-retried)                | Dead letter topic, no retries | Every failure this consumer raises is a property of the bytes; retrying would stall the partition forever. |
 | [28](#28-the-kafka-listeners-id-names-the-container-not-the-consumer-group)           | Listener id is not the group id | `idIsGroup` defaults to `true` and would silently override the configured consumer group. |
 | [29](#29-shutdown-drains-rather-than-severs)                                          | Shutdown drains | Docker's default 10s grace period would SIGKILL the JVM mid-shutdown. |
+| [30](#30-scoring-waits-for-a-full-window)                                             | Scoring waits for a full window | A partly filled window gives an unstable sigma, and the first point would give sigma = 0. |
 
 ---
 
@@ -113,8 +114,9 @@ correct configuration, not a limitation — additional partitions would buy
 parallelism that cannot be used while breaking the ordering the rolling window
 depends on.
 
-The consumer nevertheless keys its windows by series (`Map<String,
-RollingWindow>`). This is about three lines more than a single field and is not
+The consumer nevertheless keys its detectors by series (`Map<String,
+ZScoreDetector>` in `SeriesDetectors`, each holding its own `RollingWindow`). This
+is about three lines more than a single field and is not
 speculative: anomaly detection is inherently per-series, and pooling readings
 from different sources into one window is statistically wrong. Messages are
 keyed by `seriesId` for the same reason. Adding a second series becomes a
@@ -198,6 +200,12 @@ minutes. This is the definition of the threshold, not a defect. Because the mean
 and sigma are *estimated* from a finite window rather than known, the real tail
 is somewhat fatter than the normal distribution implies, so the observed rate
 runs slightly higher.
+
+Measured on 900 points of live output from the producer, 0.23% of baseline points
+exceeded three sigma — consistent with the 0.27% the threshold defines, at that
+sample size. Worth being able to say out loud: a false positive every few minutes
+is not a bug to be fixed by raising the threshold, it is the cost of choosing
+three sigma, and raising it trades those alarms for missed anomalies.
 
 ### 12. Non-finite values are rejected at the boundary
 
@@ -514,3 +522,18 @@ is closed afterwards, flushing anything still buffered.
 Measured: both services stop in under a second, and the committed offset survives — after a stop the group
 showed a lag of one record, the point published after the last commit, which the restarted consumer then
 picked up. That single record is at-least-once behaving exactly as decision 13 describes.
+
+### 30. Scoring waits for a full window
+
+Until the window holds `minimum-samples` values — defaulting to the full 50 — points are recorded but not
+scored. A single value has no deviation at all, and a handful gives one that swings wildly, so scoring early
+would manufacture anomalies out of a thin baseline rather than finding them.
+
+Warming points still produce a line, in the normal format with a Z-score of `0.00`, because the brief asks
+for one line per processed data point and says nothing about a warm-up. The alternative — staying silent for
+the first five seconds — would be a quieter log but a deviation from the one part of the output the brief
+fixes verbatim.
+
+The cost is a blind window after every restart: at ten points per second, five seconds during which a
+genuine anomaly would pass unflagged. That is the price of not guessing at a baseline, and it is the reason
+the window belongs in a state store rather than in memory if this ever scaled — see **Up Next**.

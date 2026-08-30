@@ -65,7 +65,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
 
 ## Phase 5 — Documentation
 
-- [ ] **13. Decision log, final pass.** `docs/decisions.md` is created in task 1
+- [X] **13. Decision log, final pass.** `docs/decisions.md` is created in task 1
       and kept current as decisions are made; this is the closing review, not a
       reconstruction at the end.
       → `13. final pass on the decision log`
