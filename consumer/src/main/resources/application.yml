@@ -3,6 +3,10 @@ spring:
     name: consumer
   main:
     keep-alive: true
+  # On SIGTERM the listener container finishes the batch it is holding and commits those offsets before
+  # leaving the group, so a restart resumes exactly where this one stopped rather than reprocessing.
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
     consumer:
@@ -22,6 +26,8 @@ spring:
         spring.json.use.type.headers: false
     listener:
       ack-mode: manual_immediate
+      # Finish the records already polled rather than dropping them where they are.
+      immediate-stop: false
 
 consumer:
   topic: metrics.raw

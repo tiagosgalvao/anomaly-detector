@@ -6,36 +6,37 @@ outcome.
 
 ## At a glance
 
-| # | Decision | In one line |
-| --- | --- | --- |
-| [1](#1-three-services-not-the-single-container-simplification) | Three services, not the permitted single container | The queue mechanics are most of the exercise, so the harder path is the one worth taking. |
-| [2](#2-kafka-as-the-messaging-system) | Kafka, in KRaft mode | Chosen for **replay**, not scale: tuning a detector needs the same data re-run under new parameters. |
-| [3](#3-kafka-streams-is-not-used) | No Kafka Streams | Its windowing is time-based; this window is count-based, so the ring buffer gets written either way. |
-| [4](#4-one-series-one-partition--with-per-series-windows-regardless) | One series, one partition | Correct for one order-sensitive series — but windows are keyed by series anyway. |
-| [5](#5-json-on-the-wire-not-a-bare-number) | JSON payload, not a bare number | A bare double forfeits the partition key, the timestamp and any identifier. |
-| [6](#6-no-shared-dto-artifact--the-consumer-is-a-tolerant-reader) | No shared DTO — tolerant reader | Keeps deployments independent, and makes the ground-truth flag structurally unreachable from the detector. |
-| [7](#7-sample-standard-deviation-not-population) | Sample standard deviation (n − 1) | The window is a sample of an ongoing process, not a population. |
-| [8](#8-mean-and-sigma-recomputed-per-point-on-rather-than-maintained-in-o1) | O(N) recompute, not O(1) running sums | Clarity over cleverness; running sums drift and can catastrophically cancel. |
-| [9](#9-each-point-is-scored-against-the-window-before-it-is-inserted) | Score before inserting the point | A point inside its own baseline contaminates it and caps the Z-score at ≈6.93. |
-| [10](#10-detected-anomalies-are-excluded-from-the-window) | Anomalies excluded from the window | Prevents sigma inflation — at the cost of never adapting to a genuine level shift. |
-| [11](#11-a-threshold-of-z--3-has-a-known-false-positive-rate) | Z > 3 flags ~0.27% by construction | That is the definition of the threshold, not a defect. Measured at 0.23%. |
-| [12](#12-non-finite-values-are-rejected-at-the-boundary) | Non-finite values rejected at the boundary | One `NaN` in the ring buffer poisons every later Z-score. |
-| [13](#13-at-least-once-delivery) | At-least-once delivery | Redelivery is preferable to loss; the cost is a point that can enter the window twice. |
-| [14](#14-two-independent-projects-rather-than-a-multi-module-build) | Two independent Gradle projects | A repository boundary is not a build boundary; each service owns its Docker context. |
-| [15](#15-gradle-over-maven) | Gradle over Maven | Familiarity, with Maven's cleaner dependency-caching idiom acknowledged. |
-| [16](#16-kotlin-dsl-for-the-build-scripts) | Kotlin DSL for build scripts | Statically typed build files; Gradle's default for new builds since 8.2. |
-| [17](#17-a-pinned-toolchain-image-for-container-builds) | Pinned Gradle image, not the wrapper | The image must not depend on a jar an email filter can strip. |
-| [18](#18-two-broker-listeners-one-internal-and-one-for-the-host) | Two broker listeners | Clients connect to what the broker *advertises*, so the host needs its own listener. |
-| [19](#19-the-broker-is-gated-by-a-healthcheck-and-its-data-outlives-the-container) | Healthcheck gate, data on a volume | Without it both services crash-loop on a cold start; the volume is what makes replay real. |
-| [20](#20-layered-images-built-by-a-pinned-gradle-run-as-a-non-root-user) | Layered images, non-root runtime | Dependencies cached separately from application code; no build tooling in the runtime image. |
-| [21](#21-the-services-are-kept-alive-explicitly) | Liveness stated, not inherited | Headless Boot apps exit 0; under `restart: unless-stopped` that is a restart loop. |
-| [22](#22-the-producers-wire-format-is-configured-not-hand-rolled) | Configured serializers, no type headers | Jackson 3 and renamed spring-kafka classes; the type header would couple the services. |
+| #                                                                                     | Decision | In one line |
+|---------------------------------------------------------------------------------------| --- | --- |
+| [1](#1-three-services-not-the-single-container-simplification)                        | Three services, not the permitted single container | The queue mechanics are most of the exercise, so the harder path is the one worth taking. |
+| [2](#2-kafka-as-the-messaging-system)                                                 | Kafka, in KRaft mode | Chosen for **replay**, not scale: tuning a detector needs the same data re-run under new parameters. |
+| [3](#3-kafka-streams-is-not-used)                                                     | No Kafka Streams | Its windowing is time-based; this window is count-based, so the ring buffer gets written either way. |
+| [4](#4-one-series-one-partition--with-per-series-windows-regardless)                  | One series, one partition | Correct for one order-sensitive series — but windows are keyed by series anyway. |
+| [5](#5-json-on-the-wire-not-a-bare-number)                                            | JSON payload, not a bare number | A bare double forfeits the partition key, the timestamp and any identifier. |
+| [6](#6-no-shared-dto-artifact--the-consumer-is-a-tolerant-reader)                     | No shared DTO — tolerant reader | Keeps deployments independent, and makes the ground-truth flag structurally unreachable from the detector. |
+| [7](#7-sample-standard-deviation-not-population)                                      | Sample standard deviation (n − 1) | The window is a sample of an ongoing process, not a population. |
+| [8](#8-mean-and-sigma-recomputed-per-point-on-rather-than-maintained-in-o1)           | O(N) recompute, not O(1) running sums | Clarity over cleverness; running sums drift and can catastrophically cancel. |
+| [9](#9-each-point-is-scored-against-the-window-before-it-is-inserted)                 | Score before inserting the point | A point inside its own baseline contaminates it and caps the Z-score at ≈6.93. |
+| [10](#10-detected-anomalies-are-excluded-from-the-window)                             | Anomalies excluded from the window | Prevents sigma inflation — at the cost of never adapting to a genuine level shift. |
+| [11](#11-a-threshold-of-z--3-has-a-known-false-positive-rate)                         | Z > 3 flags ~0.27% by construction | That is the definition of the threshold, not a defect. Measured at 0.23%. |
+| [12](#12-non-finite-values-are-rejected-at-the-boundary)                              | Non-finite values rejected at the boundary | One `NaN` in the ring buffer poisons every later Z-score. |
+| [13](#13-at-least-once-delivery)                                                      | At-least-once delivery | Redelivery is preferable to loss; the cost is a point that can enter the window twice. |
+| [14](#14-two-independent-projects-rather-than-a-multi-module-build)                   | Two independent Gradle projects | A repository boundary is not a build boundary; each service owns its Docker context. |
+| [15](#15-gradle-over-maven)                                                           | Gradle over Maven | Familiarity, with Maven's cleaner dependency-caching idiom acknowledged. |
+| [16](#16-kotlin-dsl-for-the-build-scripts)                                            | Kotlin DSL for build scripts | Statically typed build files; Gradle's default for new builds since 8.2. |
+| [17](#17-a-pinned-toolchain-image-for-container-builds)                               | Pinned Gradle image, not the wrapper | The image must not depend on a jar an email filter can strip. |
+| [18](#18-two-broker-listeners-one-internal-and-one-for-the-host)                      | Two broker listeners | Clients connect to what the broker *advertises*, so the host needs its own listener. |
+| [19](#19-the-broker-is-gated-by-a-healthcheck-and-its-data-outlives-the-container)    | Healthcheck gate, data on a volume | Without it both services crash-loop on a cold start; the volume is what makes replay real. |
+| [20](#20-layered-images-built-by-a-pinned-gradle-run-as-a-non-root-user)              | Layered images, non-root runtime | Dependencies cached separately from application code; no build tooling in the runtime image. |
+| [21](#21-the-services-are-kept-alive-explicitly)                                      | Liveness stated, not inherited | Headless Boot apps exit 0; under `restart: unless-stopped` that is a restart loop. |
+| [22](#22-the-producers-wire-format-is-configured-not-hand-rolled)                     | Configured serializers, no type headers | Jackson 3 and renamed spring-kafka classes; the type header would couple the services. |
 | [23](#23-configuration-is-validated-when-the-context-starts-not-when-a-value-is-used) | Configuration validated at startup | A bad value fails the container immediately instead of emitting `NaN` much later. |
-| [24](#24-the-producer-publishes-with-acksall) | `acks=all` on the producer | The only setting that keeps the idempotent producer; `acks=1` disables it *silently*. |
-| [25](#25-the-producer-sends-a-primitive-double-the-consumer-reads-a-boxed-double) | `double` out, `Double` in | Only the parsing side can encounter absence, and a primitive would fabricate `0.0`. |
-| [26](#26-the-consumer-states-its-target-type-and-refuses-type-headers) | Consumer states its own target type | It never takes deserialisation instructions from the wire. |
-| [27](#27-bad-payloads-go-to-a-dead-letter-topic-without-being-retried) | Dead letter topic, no retries | Every failure this consumer raises is a property of the bytes; retrying would stall the partition forever. |
-| [28](#28-the-kafka-listeners-id-names-the-container-not-the-consumer-group) | Listener id is not the group id | `idIsGroup` defaults to `true` and would silently override the configured consumer group. |
+| [24](#24-the-producer-publishes-with-acksall)                                         | `acks=all` on the producer | The only setting that keeps the idempotent producer; `acks=1` disables it *silently*. |
+| [25](#25-the-producer-sends-a-primitive-double-the-consumer-reads-a-boxed-double)     | `double` out, `Double` in | Only the parsing side can encounter absence, and a primitive would fabricate `0.0`. |
+| [26](#26-the-consumer-states-its-target-type-and-refuses-type-headers)                | Consumer states its own target type | It never takes deserialisation instructions from the wire. |
+| [27](#27-bad-payloads-go-to-a-dead-letter-topic-without-being-retried)                | Dead letter topic, no retries | Every failure this consumer raises is a property of the bytes; retrying would stall the partition forever. |
+| [28](#28-the-kafka-listeners-id-names-the-container-not-the-consumer-group)           | Listener id is not the group id | `idIsGroup` defaults to `true` and would silently override the configured consumer group. |
+| [29](#29-shutdown-drains-rather-than-severs)                                          | Shutdown drains | Docker's default 10s grace period would SIGKILL the JVM mid-shutdown. |
 
 ---
 
@@ -497,3 +498,19 @@ partition would only fail outright once the two counts diverge.
 consumer group id and silently override `spring.kafka.consumer.group-id`. It is set to `false` explicitly so
 the id only names the listener container — the identity `ReplayIntegrationTest` and `DeadLetterIntegrationTest`
 use to start and stop it — leaving group membership to the configured property alone.
+
+### 29. Shutdown drains rather than severs
+
+`docker compose down` sends SIGTERM and then SIGKILL after **ten seconds** by default. That is the part
+worth knowing: the application can be written to shut down perfectly and still be killed half way through
+it, because the default grace period is a property of Docker, not of the service. Both services therefore
+declare `stop_grace_period: 30s`, and both bound their own shutdown well inside it.
+
+The consumer finishes the batch it has already polled and commits those offsets before leaving the group,
+so a restart resumes exactly where the previous instance stopped instead of reprocessing. The producer lets
+the scheduler finish the point it is publishing rather than abandoning it mid-send, and the producer factory
+is closed afterwards, flushing anything still buffered.
+
+Measured: both services stop in under a second, and the committed offset survives — after a stop the group
+showed a lag of one record, the point published after the last commit, which the restarted consumer then
+picked up. That single record is at-least-once behaving exactly as decision 13 describes.

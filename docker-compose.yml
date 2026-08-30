@@ -40,6 +40,8 @@ services:
       context: ./producer
     container_name: producer
     restart: unless-stopped
+    # Docker's default is 10s, which would SIGKILL the JVM part-way through its shutdown hook.
+    stop_grace_period: 30s
     depends_on:
       kafka:
         condition: service_healthy
@@ -51,6 +53,8 @@ services:
       context: ./consumer
     container_name: consumer
     restart: unless-stopped
+    # Docker's default is 10s, which would SIGKILL the JVM part-way through its shutdown hook.
+    stop_grace_period: 30s
     depends_on:
       kafka:
         condition: service_healthy
