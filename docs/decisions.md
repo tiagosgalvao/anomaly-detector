@@ -204,6 +204,13 @@ does not recover cleanly even as the value ages out. Values are checked with
 `Double.isFinite` on arrival and routed to the dead-letter topic, and validated
 producer-side before publication.
 
+A window can still reach a standard deviation of exactly zero without any
+non-finite input — every value in it identical — at which point the Z-score
+formula's denominator is zero. `ZScoreDetector` guards this explicitly: below a
+`1e-9` deviation the window is treated as having no measurable spread, and the
+point is reported as normal with a Z-score of `0.0` rather than the `NaN` or
+`Infinity` that `0/0` or `x/0` would otherwise produce.
+
 ---
 
 ## Delivery and build

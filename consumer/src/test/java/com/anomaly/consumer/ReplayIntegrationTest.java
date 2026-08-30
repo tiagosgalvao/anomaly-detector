@@ -1,5 +1,6 @@
 package com.anomaly.consumer;
 
+import static com.anomaly.consumer.DataPointListener.CONTAINER_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
@@ -121,7 +122,7 @@ class ReplayIntegrationTest {
     }
 
     private MessageListenerContainer container() {
-        return registry.getListenerContainer(DataPointListener.CONTAINER_ID);
+        return registry.getListenerContainer(CONTAINER_ID);
     }
 
     private void awaitReceipt(List<String> ids) {
