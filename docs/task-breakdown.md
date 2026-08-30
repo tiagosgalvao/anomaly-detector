@@ -43,7 +43,7 @@ Tasks 1–15 make a complete submission. 16, 17 and 18 are optional.
 
 ## Phase 3 — Detection core ***
 
-- [ ] **8. `RollingWindow` + tests.** Fixed-capacity ring buffer, mean and
+- [X] **8. `RollingWindow` + tests.** Fixed-capacity ring buffer, mean and
       sample standard deviation recomputed per call.
       → `8. rolling window with sample statistics + tests`
 - [ ] **9. `ZScoreDetector` + tests.** Score against the window *before*

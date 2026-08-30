@@ -117,6 +117,11 @@ from different sources into one window is statistically wrong. Messages are
 keyed by `seriesId` for the same reason. Adding a second series becomes a
 configuration change rather than a rewrite.
 
+`RollingWindow` itself is deliberately not thread-safe: one instance belongs to
+one series, and Kafka guarantees a partition is consumed by a single thread, so
+no instance is ever touched concurrently. Adding synchronisation would defend
+against a case that cannot occur.
+
 ---
 
 ## Message contract
